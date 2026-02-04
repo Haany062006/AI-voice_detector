@@ -6,7 +6,7 @@ import google.generativeai as genai
 
 # --- 1. CONFIGURATION ---
 # Replace the string below with your key from Step 1
-genai.configure(api_key="PASTE_YOUR_AI_STUDIO_KEY_HERE")
+genai.configure(api_key="AIzaSyALpq_FRZcYlsZp1dSC5nUSa0QpQBMnE8I")
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 # This is the key the judges will use to access YOUR API
@@ -57,4 +57,5 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
         }
 
     except Exception as e:
+
         return {"status": "error", "message": f"Processing error: {str(e)}"}
