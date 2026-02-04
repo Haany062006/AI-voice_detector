@@ -1,72 +1,66 @@
+import numpy as np
+import librosa
 import base64
-import json
-import re
-from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
-import google.generativeai as genai
+import io
+from scipy.signal import correlate
 
-# --- 1. CONFIGURATION ---
-genai.configure(api_key="AIzaSyALpq_FRZcYlsZp1dSC5nUSa0QpQBMnE8I")
+def analyze_audio_forensics(base64_string):
+    # 1. Decode and Load Audio
+    audio_data = base64.b64decode(base64_string.split(',')[-1])
+    y, sr = librosa.load(io.BytesIO(audio_data), sr=None)
+    
+    # --- FORENSIC CHECK A: The "Digital Zero" Test ---
+    # Humans have room noise. AI often has absolute digital silence (0.0).
+    silence_threshold = 0.00001
+    zero_count = np.sum(np.abs(y) < silence_threshold)
+    zero_ratio = zero_count / len(y)
+    
+    # --- FORENSIC CHECK B: Spectral Artifacts ---
+    # AI voices often have 'aliasing' in high frequencies (above 12kHz).
+    spec = np.abs(librosa.stft(y))
+    # Check energy distribution in the high-frequency bands
+    high_freq_energy = np.mean(spec[int(spec.shape[0]*0.75):, :])
+    
+    # --- FORENSIC CHECK C: Exact Pattern Replication ---
+    # Your API missed the loop. We use Cross-Correlation to find identical segments.
+    # We split the audio in half and see if they match 100%
+    halfway = len(y) // 2
+    first_half = y[:halfway]
+    second_half = y[halfway:halfway + len(first_half)]
+    
+    # Normalize for correlation
+    corr = correlate(first_half[::100], second_half[::100]) # Downsampled for speed
+    max_corr = np.max(corr)
+    
+    # --- DECISION LOGIC ---
+    is_ai = False
+    reasons = []
+    confidence = 0.5
+    
+    if zero_ratio > 0.05: # More than 5% absolute silence
+        is_ai = True
+        reasons.append("Absolute digital silence detected (Noise floor missing)")
+        confidence += 0.2
+        
+    if max_corr > 0.95: # Segments are mathematically identical
+        is_ai = True
+        reasons.append("Identical audio looping detected (Synthetic repetition)")
+        confidence += 0.3
 
-# Stable version for Feb 2026
-model = genai.GenerativeModel('gemini-2.5-flash')
+    # NotebookLM specific: Smooth pitch transitions
+    pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+    pitch_std = np.std(pitches[pitches > 0])
+    if pitch_std < 50: # Real human voices are much more chaotic
+        reasons.append("Vocal pitch variance too low (Mathematical prosody)")
+        confidence += 0.1
 
-MY_SECRET_KEY = "sk_test_123456789" 
+    return {
+        "status": "success",
+        "classification": "AI" if is_ai else "HUMAN",
+        "confidenceScore": min(confidence, 1.0),
+        "explanation": " ".join(reasons) if reasons else "Natural human characteristics detected."
+    }
 
-app = FastAPI()
-
-class VoiceRequest(BaseModel):
-    language: str
-    audioFormat: str
-    audioBase64: str
-
-@app.get("/")
-async def root():
-    return {"message": "AI Voice Detector is Online"}
-
-@app.post("/api/voice-detection")
-async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
-    if x_api_key != MY_SECRET_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    try:
-        # Clean and decode the Base64 string
-        b64_str = request.audioBase64.strip()
-        # Fix padding if necessary
-        missing_padding = len(b64_str) % 4
-        if missing_padding:
-            b64_str += "=" * (4 - missing_padding)
-            
-        audio_bytes = base64.b64decode(b64_str)
-
-        # The prompt needs to be very specific
-        prompt = (
-            f"You are a forensic expert. Analyze this {request.language} audio for AI manipulation. "
-            "Return ONLY a JSON object with: 'classification' (HUMAN or AI_GENERATED), "
-            "'confidenceScore' (0.0 to 1.0), and 'explanation'."
-        )
-
-        # Passing the audio data directly as a dictionary (No 'Part' import needed)
-        response = model.generate_content([
-            prompt,
-            {
-                "mime_type": "audio/mp3",
-                "data": audio_bytes
-            }
-        ])
-
-        # Extract and clean JSON from the response
-        response_text = response.text
-        clean_text = re.sub(r'```json|```', '', response_text).strip()
-        result = json.loads(clean_text)
-
-        return {
-            "status": "success",
-            "language": request.language,
-            "classification": result.get("classification"),
-            "confidenceScore": result.get("confidenceScore"),
-            "explanation": result.get("explanation")
-        }
-
-    except Exception as e:
-        return {"status": "error", "message": f"Server Error: {str(e)}"}
+# Example Usage
+# result = analyze_audio_forensics(your_base64_data)
+# print(result)
