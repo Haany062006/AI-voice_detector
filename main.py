@@ -1,15 +1,18 @@
 import base64
 import json
+import re
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 import google.generativeai as genai
 
 # --- 1. CONFIGURATION ---
-# Replace the string below with your key from Step 1
+# Use your AI Studio key
 genai.configure(api_key="AIzaSyALpq_FRZcYlsZp1dSC5nUSa0QpQBMnE8I")
-model = genai.GenerativeModel('gemini-1.5-flash')
 
-# This is the key the judges will use to access YOUR API
+# UPDATED: Using Gemini 3 Flash for maximum accuracy and speed
+model = genai.GenerativeModel('gemini-3-flash')
+
+# This is the key the judges will use to access your API
 MY_SECRET_KEY = "sk_test_123456789" 
 
 app = FastAPI()
@@ -29,12 +32,15 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
         # --- 3. AUDIO PROCESSING ---
         audio_bytes = base64.b64decode(request.audioBase64)
 
-        # --- 4. FORENSIC PROMPT (THE WINNING EDGE) ---
+        # --- 4. FORENSIC PROMPT ---
         prompt = (
-            f"You are a forensic audio expert. Analyze this {request.language} voice. "
-            "Determine if it is AI_GENERATED or HUMAN. Focus on 'robotic smoothing' "
-            "in regional phonemes and the presence/absence of natural breathing. "
-            "Return ONLY a JSON object with: classification, confidenceScore, explanation."
+            f"You are a forensic audio expert. Analyze this {request.language} voice recording. "
+            "Examine it for AI-generated artifacts such as unnatural phonetic transitions, "
+            "lack of breathing pauses, or digital spectral noise. "
+            "Return ONLY a JSON object with these fields: "
+            "classification (string: 'AI_GENERATED' or 'HUMAN'), "
+            "confidenceScore (float between 0 and 1), "
+            "explanation (string detail why)."
         )
 
         # Send to Gemini
@@ -43,10 +49,10 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
             {'mime_type': 'audio/mp3', 'data': audio_bytes}
         ])
 
-        # --- 5. CLEANING THE OUTPUT ---
-        # Gemini sometimes adds markdown; we strip it to get pure JSON
-        raw_text = response.text.replace('```json', '').replace('```', '').strip()
-        result = json.loads(raw_text)
+        # --- 5. ROBUST JSON CLEANING ---
+        # This removes any markdown formatting (like ```json) Gemini might add
+        clean_text = re.sub(r'```json|```', '', response.text).strip()
+        result = json.loads(clean_text)
 
         return {
             "status": "success",
@@ -57,5 +63,5 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
         }
 
     except Exception as e:
-
-        return {"status": "error", "message": f"Processing error: {str(e)}"}
+        # Detailed error reporting to help you debug during testing
+        return {"status": "error", "message": f"Detection failed: {str(e)}"}
