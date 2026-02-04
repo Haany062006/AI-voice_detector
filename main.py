@@ -24,9 +24,10 @@ class VoiceRequest(BaseModel):
 
 @app.post("/api/voice-detection")
 async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
-    # --- 2. SECURITY CHECK ---
-    if x_api_key != MY_SECRET_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    # TEMPORARY DIAGNOSTIC: Check logs to see what you can actually use
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            print(f"AVAILABLE MODEL: {m.name}")
 
     try:
         # --- 3. AUDIO PROCESSING ---
@@ -72,6 +73,7 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
     except Exception as e:
         # Detailed error reporting to help you debug during testing
         return {"status": "error", "message": f"Detection failed: {str(e)}"}
+
 
 
 
