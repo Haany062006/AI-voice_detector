@@ -6,13 +6,14 @@ from pydantic import BaseModel
 import google.generativeai as genai
 
 # --- 1. CONFIGURATION ---
-# Use your AI Studio key
+# It is highly recommended to use an Environment Variable on Render for your API Key
+# But for now, we will use your provided key:
 genai.configure(api_key="AIzaSyALpq_FRZcYlsZp1dSC5nUSa0QpQBMnE8I")
 
-# UPDATED: Using Gemini 3 Flash for maximum accuracy and speed
+# Using the stable Gemini 2.5 Flash model for 2026
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# This is the key the judges will use to access your API
+# This is the secret key required in the 'x-api-key' header
 MY_SECRET_KEY = "sk_test_123456789" 
 
 app = FastAPI()
@@ -22,22 +23,24 @@ class VoiceRequest(BaseModel):
     audioFormat: str
     audioBase64: str
 
+@app.get("/")
+async def root():
+    return {"message": "AI Voice Detector API is running. Use POST /api/voice-detection"}
+
 @app.post("/api/voice-detection")
 async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
-    # TEMPORARY DIAGNOSTIC: Check logs to see what you can actually use
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            print(f"AVAILABLE MODEL: {m.name}")
+    # --- 2. SECURITY CHECK ---
+    if x_api_key != MY_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
     try:
         # --- 3. AUDIO PROCESSING ---
-        # --- 3. AUDIO PROCESSING (with safety padding) ---
+        # Strip potential whitespace and fix padding
         b64_str = request.audioBase64.strip()
-        # Fix padding if it's missing
         missing_padding = len(b64_str) % 4
         if missing_padding:
             b64_str += "=" * (4 - missing_padding)
-        
+            
         audio_bytes = base64.b64decode(b64_str)
 
         # --- 4. FORENSIC PROMPT ---
@@ -51,19 +54,20 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
             "explanation (string detail why)."
         )
 
-        # Send to Gemini
-       # Create a 'Part' object that Gemini recognizes as audio
-response = model.generate_content(
-    contents=[
-        prompt,
-        {
-            "mime_type": "audio/mp3",
-            "data": audio_bytes
-        }
-    ]
-)
-        # --- 5. ROBUST JSON CLEANING ---
-        # This removes any markdown formatting (like ```json) Gemini might add
+        # --- 5. GEMINI MULTIMODAL CALL ---
+        # Passing as a list of parts ensures the model processes the binary data
+        response = model.generate_content(
+            contents=[
+                prompt,
+                {
+                    "mime_type": "audio/mp3",
+                    "data": audio_bytes
+                }
+            ]
+        )
+
+        # --- 6. JSON CLEANING & PARSING ---
+        # Remove markdown code blocks if the model returns them
         clean_text = re.sub(r'```json|```', '', response.text).strip()
         result = json.loads(clean_text)
 
@@ -76,10 +80,4 @@ response = model.generate_content(
         }
 
     except Exception as e:
-        # Detailed error reporting to help you debug during testing
         return {"status": "error", "message": f"Detection failed: {str(e)}"}
-
-
-
-
-
