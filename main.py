@@ -9,7 +9,7 @@ import uvicorn
 
 # 1. SETUP GOOGLE AI STUDIO (Gemini)
 # PASTE YOUR ACTUAL KEY HERE
-genai.configure(api_key="YOUR_ACTUAL_GOOGLE_STUDIO_KEY")
+genai.configure(api_key="AIzaSyALpq_FRZcYlsZp1dSC5nUSa0QpQBMnE8I")
 
 # 2. SETUP YOUR FORM KEY (x-api-key)
 VALID_API_KEY = "hackathon_key_2026"
@@ -48,7 +48,7 @@ async def classify_audio(data: AudioData, api_key: str = Depends(verify_api_key)
         is_ai_math = forensic_math_check(y)
         
         # B. GEMINI CHECK (AI Analysis)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content([
             "Analyze this audio. Is this an AI-generated voice? Answer with 'Verdict: AI' or 'Verdict: HUMAN' and explain why.",
             {"mime_type": "audio/mp3", "data": audio_bytes}
@@ -74,3 +74,4 @@ async def root():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
