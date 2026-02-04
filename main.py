@@ -30,7 +30,14 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
 
     try:
         # --- 3. AUDIO PROCESSING ---
-        audio_bytes = base64.b64decode(request.audioBase64)
+        # --- 3. AUDIO PROCESSING (with safety padding) ---
+        b64_str = request.audioBase64.strip()
+        # Fix padding if it's missing
+        missing_padding = len(b64_str) % 4
+        if missing_padding:
+            b64_str += "=" * (4 - missing_padding)
+        
+        audio_bytes = base64.b64decode(b64_str)
 
         # --- 4. FORENSIC PROMPT ---
         prompt = (
@@ -65,4 +72,5 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
     except Exception as e:
         # Detailed error reporting to help you debug during testing
         return {"status": "error", "message": f"Detection failed: {str(e)}"}
+
 
