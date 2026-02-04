@@ -1,4 +1,5 @@
 fastapi
 uvicorn
-google-generativeai
-python-multipart
+numpy
+librosa
+scipy
