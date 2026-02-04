@@ -52,11 +52,16 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
         )
 
         # Send to Gemini
-        response = model.generate_content([
-            prompt,
-            {'mime_type': 'audio/mp3', 'data': audio_bytes}
-        ])
-
+       # Create a 'Part' object that Gemini recognizes as audio
+response = model.generate_content(
+    contents=[
+        prompt,
+        {
+            "mime_type": "audio/mp3",
+            "data": audio_bytes
+        }
+    ]
+)
         # --- 5. ROBUST JSON CLEANING ---
         # This removes any markdown formatting (like ```json) Gemini might add
         clean_text = re.sub(r'```json|```', '', response.text).strip()
@@ -73,6 +78,7 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
     except Exception as e:
         # Detailed error reporting to help you debug during testing
         return {"status": "error", "message": f"Detection failed: {str(e)}"}
+
 
 
 
