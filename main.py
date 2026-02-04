@@ -10,7 +10,7 @@ import google.generativeai as genai
 genai.configure(api_key="AIzaSyALpq_FRZcYlsZp1dSC5nUSa0QpQBMnE8I")
 
 # UPDATED: Using Gemini 3 Flash for maximum accuracy and speed
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # This is the key the judges will use to access your API
 MY_SECRET_KEY = "sk_test_123456789" 
@@ -72,5 +72,6 @@ async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
     except Exception as e:
         # Detailed error reporting to help you debug during testing
         return {"status": "error", "message": f"Detection failed: {str(e)}"}
+
 
 
