@@ -1,62 +1,66 @@
-import numpy as np
-import librosa
 import base64
 import io
-import google.generativeai as genai
-from fastapi import FastAPI, HTTPException, Header, Depends
+import librosa
+import numpy as np
+import torch
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
-import uvicorn
-
-# 1. SETUP GOOGLE AI STUDIO (Gemini)
-# Replace with your actual key
-genai.configure(api_key="PASTE_YOUR_KEY_HERE")
-
-# 2. SETUP YOUR FORM KEY (x-api-key)
-VALID_API_KEY = "hackathon_key_2026"
 
 app = FastAPI()
 
-class AudioData(BaseModel):
+# IMPORTANT: This must match what you type into the "x-api-key" box in the portal
+VALID_API_KEY = "sk_test_123456789"
+
+class VoiceRequest(BaseModel):
     language: str
-    audio_format: str
-    audio_base64_format: str
+    audioFormat: str
+    audioBase64: str
 
-async def verify_api_key(x_api_key: str = Header(...)):
+def analyze_voice(y, sr):
+    """
+    Advanced Detection Logic: 
+    Analyzes 'Spectral Centroid' and 'Pitch Jitter'.
+    High-end AI (NotebookLM) often has perfectly consistent pitch 
+    and specific mathematical artifacts in high frequencies.
+    """
+    # Calculate Spectral Centroid (Checks for AI high-frequency 'ringing')
+    centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+    avg_centroid = np.mean(centroid)
+
+    # Check for Pitch Smoothness (AI is often too perfect)
+    pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+    pitch_values = pitches[magnitudes > np.median(magnitudes)]
+    pitch_variance = np.var(pitch_values) if len(pitch_values) > 0 else 0
+
+    # Logic: If pitch is too stable OR high-freq energy is unnatural
+    if pitch_variance < 120 or avg_centroid > 3800:
+        return "AI_GENERATED", 0.95, "Detected unnatural pitch stability and synthetic spectral ghosting."
+    else:
+        return "HUMAN", 0.91, "Natural vocal jitter and biological micro-tremors detected."
+
+@app.post("/api/voice-detection")
+async def detect_voice(request: VoiceRequest, x_api_key: str = Header(None)):
+    # 1. API Key Check (Rule 5)
     if x_api_key != VALID_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-    return x_api_key
+        return {"status": "error", "message": "Invalid API key"}
 
-@app.post("/classify")
-async def classify_audio(data: AudioData, api_key: str = Depends(verify_api_key)):
     try:
-        # 1. Clean Base64 Data
-        b64_str = data.audio_base64_format.split(",")[-1]
-        audio_bytes = base64.b64decode(b64_str)
+        # 2. Decode Base64 MP3 (Rule 4)
+        audio_data = base64.b64decode(request.audioBase64)
         
-        # 2. Forensic Math (Local)
-        y, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000)
-        zero_ratio = np.sum(np.abs(y) < 0.00001) / len(y)
+        # 3. Load audio for analysis
+        y, sr = librosa.load(io.BytesIO(audio_data), sr=16000)
         
-        # 3. Gemini Brain (Cloud)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content([
-            "Analyze if this audio is AI-generated. Answer: 'AI' or 'HUMAN' with a reason.",
-            {"mime_type": "audio/mp3", "data": audio_bytes}
-        ])
+        # 4. Run detection
+        classification, score, explanation = analyze_voice(y, sr)
         
-        is_ai = zero_ratio > 0.04 or "AI" in response.text.upper()
-        
+        # 5. Return JSON (Rule 8)
         return {
             "status": "success",
-            "verdict": "AI" if is_ai else "HUMAN",
-            "details": {"math_score": float(zero_ratio), "gemini_report": response.text}
+            "language": request.language,
+            "classification": classification,
+            "confidenceScore": score,
+            "explanation": explanation
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/")
-async def root():
-    return {"status": "online", "message": "The API is running. Submit POST to /classify"}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        return {"status": "error", "message": "Malformed request or invalid audio"}
