@@ -1,0 +1,29 @@
+name: Deploy to Cloud Run
+on:
+  push:
+    branches: [ main ] # Triggered whenever you push to main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Essential for the OIDC handshake
+
+    steps:
+    - uses: 'actions/checkout@v4'
+
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        # This is your specific provider path
+        workload_identity_provider: 'projects/246671218343/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+        service_account: 'github-deployer@ai-voice-detector-486508.iam.gserviceaccount.com'
+
+    - name: 'Deploy to Cloud Run'
+      uses: 'google-github-actions/deploy-cloudrun@v2'
+      with:
+        service: 'ai-voice-detector'
+        region: 'us-central1'
+        source: './'
